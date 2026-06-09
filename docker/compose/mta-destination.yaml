@@ -1,0 +1,19 @@
+services:
+  # This represents our own self-hosted mail server for `getmail` to deliver to:
+  # NOTE: The Getmail integration in DMS is purposefully ignored. DMS is only used here to
+  #       provide a mail server (particularly Dovecot) to support testing `[destination]`.
+  dms-destination:
+    image: ghcr.io/docker-mailserver/docker-mailserver:15.1
+    hostname: mail.destination.test
+    environment:
+      # Faster startup as this service is not needed:
+      ENABLE_AMAVIS: 0
+    configs:
+      - source: dms-accounts-destination
+        target: /tmp/docker-mailserver/postfix-accounts.cf
+
+configs:
+  dms-accounts-destination:
+    content: |
+      jane.doe@destination.test|{SHA512-CRYPT}$$6$$sbgFRCmQ.KWS5ryb$$EsWrlYosiadgdUOxCBHY0DQ3qFbeudDhNMqHs6jZt.8gmxUwiLVy738knqkHD4zj4amkb296HFqQ3yDq4UXt8.
+      john.doe@destination.test|{SHA512-CRYPT}$$6$$sbgFRCmQ.KWS5ryb$$EsWrlYosiadgdUOxCBHY0DQ3qFbeudDhNMqHs6jZt.8gmxUwiLVy738knqkHD4zj4amkb296HFqQ3yDq4UXt8.

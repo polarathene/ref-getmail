@@ -1,0 +1,44 @@
+# Share LMTP transport from `dms-destination` to `getmail`
+#
+# Alternative - LMTP via TCP
+# CAUTION: While simpler, exposes LMTP to to all containers on connected networks)
+
+# Reference - LMTP TCP listens on port 24:
+# https://doc.dovecot.org/main/core/config/delivery/lmtp.html#listeners
+# https://datatracker.ietf.org/doc/html/rfc2033#section-5
+# `grep -i lmtp /etc/services` should also recognize port 24 as associated to `lmtp`
+
+services:
+  getmail:
+    depends_on:
+      dms-destination:
+        condition: service_healthy
+
+  dms-destination:
+    healthcheck:
+      test: "ss --listening --ipv4 --tcp --numeric | grep --silent ':24' || exit 1"
+    configs:
+      - source: script-dms-lmtp-tcp
+        target: /tmp/docker-mailserver/user-patches.sh
+
+configs:
+  # - You cannot bind to the loopback interface (`127.0.0.1`) within a container
+  #   if you want another container to be able to reach the service.
+  # - You can assign an explicit IP to the container, or use `0.0.0.0` (all interfaces),
+  #   be aware that unlike sharing a unix socket file, when you share access to a service
+  #   via a network instead that it is reachable to _all containers in that network_.
+  script-dms-lmtp-tcp:
+    content: |
+      #! /usr/bin/env bash
+
+      echo '[user-patches.sh] Changing the Dovecot LMTP service listener from a unix socket (file) to TCP socket (network) at: 0.0.0.0:24'
+
+      # Switch Dovecot LMTP config from listening on UDS to instead listen on TCP:
+      cat >/etc/dovecot/conf.d/lmtp-master.inc << HEREDOC
+      service lmtp {
+        inet_listener lmtp {
+          address = 0.0.0.0
+          port = 24
+        }
+      }
+      HEREDOC

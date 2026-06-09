@@ -1,0 +1,53 @@
+services:
+  getmail:
+    depends_on:
+      # Wait until the remote mail server can be queried via IMAP:
+      dms-retriever:
+        condition: service_healthy
+
+  # This instance mocks an external mail service like Gmail:
+  dms-retriever:
+    image: ghcr.io/docker-mailserver/docker-mailserver:15.1
+    hostname: mail.retriever.test
+    container_name: dms-retriever
+    # This healthcheck communicates a healthy status once Dovecot has bound port 143 (IMAP via StartTLS)
+    healthcheck:
+      test: "ss --listening --ipv4 --tcp --numeric | grep --silent ':143' || exit 1"
+      start_period: 30s
+    environment:
+      # Allows for us send a test mail easily by trusting any mail client run within this container (`swaks`):
+      PERMIT_DOCKER: container
+      # Required when testing spam delivery to `Junk` mailbox:
+      ENABLE_SPAMASSASSIN: 1
+    configs:
+      - source: dms-accounts-retriever
+        target: /tmp/docker-mailserver/postfix-accounts.cf
+      # During container setup, DMS makes an internal copy from the user config dir to:
+      # `/var/mail/retriever.test/john.doe/home/.dovecot.sieve`
+      - source: sieve
+        target: /tmp/docker-mailserver/john.doe@retriever.test.dovecot.sieve
+
+# NOTE: `$$` is an escaped `$` (which will opt-out when Docker Compose pre-processes YAML config by interpolating environment variables)
+configs:
+  # DMS requires an account to complete setup, configure at least one account for each DMS container:
+  # NOTE: All accounts are configured with the same example password (`secret`, SHA512-CRYPT hashed)
+  dms-accounts-retriever:
+    content: |
+      jane.doe@retriever.test|{SHA512-CRYPT}$$6$$sbgFRCmQ.KWS5ryb$$EsWrlYosiadgdUOxCBHY0DQ3qFbeudDhNMqHs6jZt.8gmxUwiLVy738knqkHD4zj4amkb296HFqQ3yDq4UXt8.
+      john.doe@retriever.test|{SHA512-CRYPT}$$6$$sbgFRCmQ.KWS5ryb$$EsWrlYosiadgdUOxCBHY0DQ3qFbeudDhNMqHs6jZt.8gmxUwiLVy738knqkHD4zj4amkb296HFqQ3yDq4UXt8.
+
+  # Sieve script to route subaddress usage to separate mailboxes (folders) nested under the `INBOX` mailbox:
+  # https://docker-mailserver.github.io/docker-mailserver/v15.1/config/advanced/mail-sieve/#subaddress-mailbox-routing
+  sieve:
+    content: |
+      require ["envelope", "fileinto", "mailbox", "regex", "subaddress", "variables"];
+
+      # Check if the mail recipient address uses an expected subaddress tag (sourced from `:detail`)
+      # `:regex` is needed if permitting a fixed set of values. A capture group can then be referenced via `${1}`.
+      if envelope :detail :regex "to" "^(promotions|social)$" {
+        # Create a variable `tag`, with the captured `to` value normalized (eg: SoCIAL => Social)
+        set :lower :upperfirst "tag" "$${1}";
+
+        # Store the mail into a folder with the subaddress tag name (nested under the primary INBOX folder):
+        fileinto :create "INBOX.$${tag}";
+      }

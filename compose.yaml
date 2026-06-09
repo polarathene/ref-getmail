@@ -1,0 +1,9 @@
+name: getmail-example
+
+include:
+  - path:
+    - docker/compose/getmail.yaml
+    - docker/compose/mta-retriever.yaml
+    - docker/compose/mta-destination.yaml
+    # Choose how to expose the LMTP transport to the getmail container (uds or tcp):
+    - docker/compose/mta-destination.lmtp-${MTA_LMTP_TYPE:-uds}.yaml

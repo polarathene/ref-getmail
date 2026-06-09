@@ -1,0 +1,11 @@
+services:
+  getmail:
+    image: localhost/getmail:latest
+    # Don't attempt to pull from a registry, only build the image locally:
+    pull_policy: build
+    # Project root as build context:
+    build: ../../
+    environment:
+      GETMAIL_POLL: 60 # seconds
+    volumes:
+      - ../runtime/getmail-configs/:/run/getmail/configs/:ro

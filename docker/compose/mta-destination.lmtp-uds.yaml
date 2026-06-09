@@ -1,0 +1,42 @@
+# Share LMTP transport from `dms-destination` to `getmail`
+#
+# A UDS (Unix Domain Socket) file is shared via a volume:
+# 1. `volumes` long-syntax is required if mounting only the UDS file (preferred).
+#    `volumes` short-syntax works when it's acceptable to share all of `/run/dovecot/`.
+#    https://docs.docker.com/reference/compose-file/services/#volumes
+# 2. Delay starting the Getmail container until `dms-destination` has provisioned a socket file for using LMTP:
+#    - Avoids a runtime error on Getmail `[destination]` config (file does not yet exist).
+#    - Avoids a container startup failure due to subpath mount error (`volumes` long-syntax only).
+
+volumes:
+  dovecot-data:
+    name: dovecot-lmtp-socket
+
+services:
+  getmail:
+    # Wait until the `[destination]` (in Getmail runtime config) for LMTP can be reached:
+    depends_on:
+      dms-destination:
+        condition: service_healthy
+    # Provides LMTP access:
+    volumes:
+      - type: volume
+        source: dovecot-data
+        target: /run/dovecot/lmtp
+        read_only: true
+        volume:
+          nocopy: true
+          # The unix socket file:
+          subpath: lmtp
+
+  dms-destination:
+    volumes:
+      # Use a named data volume to share a directory that will provision the `lmtp` unix socket file:
+      - dovecot-data:/run/dovecot/:rw
+    # Detect when the unix socket file for LMTP has actually been provisioned:
+    healthcheck:
+      test: "bash -c '[[ -S /run/dovecot/lmtp ]] || exit 1'"
+      # During startup only, `test` will be invoked every 5s until `start_period`.
+      # `interval` and `retries` would otherwise need to be adjusted to minimize
+      # how long it's dependent containers are delayed by the healthcheck succeeding.
+      start_period: 30s
